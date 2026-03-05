@@ -1,2 +1,9 @@
 # PYCHARM FILES
 .idea
+__pycache__
+
+# ENVIRONMENT VARIABLES
+.env
+
+# GITHUB FILES
+.gitignore
