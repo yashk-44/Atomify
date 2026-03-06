@@ -5,7 +5,7 @@ from schema import *
 MODEL = "neural-chat:latest"
 
 
-def _habit_insight_prompt(habit, quantity, streak, time_available, time_spent, quantity_done,
+def _habit_insight_prompt(habit, estimated_time, quantity, streak, time_available, time_spent, quantity_done,
                           completed, user_notes):
     """
     Returns a formatted prompt for the LLM model (neural-chat) to provide insights on a habit completed by a user.
@@ -28,20 +28,25 @@ def _habit_insight_prompt(habit, quantity, streak, time_available, time_spent, q
         given their day.
         
         habit: {habit}
+        estimated_time: {estimated_time}
         suggested_quantity: {quantity}
         quantity_done: {quantity_done}
         habit_streak: {streak}
         time_available: {time_available}
-        time_spent_on_activity: {time_spent}
+        time_spent: {time_spent}
         completed: {completed}
         user_notes: {user_notes}
         
-        where habit is the user's habit, suggested_quantity is the quantity of the action that should be completed to 
-        satisfy this habit, quantity_done is how much of the activity did the user actually complete, habit_streak is
-        the number of consecutive days the user completed this activity, time_available is how much free-time the user 
-        had during the day, time_spent_on_activity is how much time the user spent on this activity, completed is 
-        whether the user completed this habit, user_notes is the user's perspective to help you understand whether the 
-        user did well given their situation for the day.
+        habit is the user's habit, estimated_time is the estimated time it should take to complete the habit activity, 
+        suggested_quantity is the quantity of the action that should be completed to satisfy this habit, quantity_done 
+        is how much of the activity did the user actually complete (if quantity_done >= suggested_quantity then 
+        this activity is considered to be completed, and if suggested_quantity has no value then do not use this in your
+        comparison, decision, and response), habit_streak is the number of consecutive days the user completed 
+        this activity, time_available is how much free time the user had during the day, time_spent is how much time 
+        the user actually spent on this habit (if time_spent >= suggested_time then this deserves extra praise), 
+        completed is whether the user completed this habit, user_notes is the user's story to help you understand 
+        whether the user did well given their situation for the day.
+        
         
         Return ONLY valid JSON.
         Do NOT include explanations.
@@ -58,7 +63,9 @@ def _habit_insight_prompt(habit, quantity, streak, time_available, time_spent, q
         }}
         
         Where:
-        \'overview\' is how you think the user did overall (in 1-2 sentences) 
+        \'overview\' is how you think the user did overall (in 1-2 sentences). Include something similar in your 
+        response: \'You spent {time_spent} out of {estimated_time} on this activity and you did {quantity_done} out of 
+        {quantity}\' while keeping the response grammatically correct.
         \'praises\' is what you think the user did great on when doing this habit given their situation,
         \'quantity\' is what you think the user could have done better on with this habit in the future,
         \'score\' is how you rate the user's habit work today on a scale of 1-5 with 1 being poor and 5 being perfect,
@@ -95,12 +102,15 @@ def _generate_habit_prompt(goal: str, time_availability: str, max_deadline: str 
             "habit": string,
             "frequency": string,
             "quantity": string,
+            "suggested_time": string,
             "notes": string
         }}
         
-        Where \'habit\' is what the user should do, \'frequency\' is how many times per week this habit should be done,
-        \'quantity\' is a measure of what should be done in the activity (example: read 10 pages), \'notes\' contains
-        any further instructions and suggestions to do this habit effectively.
+        Where \'habit\' is what the user should do
+        \'frequency\' is how many times per week this habit should be done,
+        \'quantity\' is a measure of what should be done in the activity (example: read 10 pages),
+        \'suggested_time\' is an estimate of how much time it should take to complete this habit,        
+        \'notes\' contains any further instructions and suggestions to do this habit effectively.
         Be realistic and direct.
         """)
 
@@ -155,9 +165,10 @@ class HabitEngine:
                 "habit": {"type": "string"},
                 "frequency": {"type": "string"},
                 "quantity": {"type": "string"},
+                "estimated_time": {"type": "string"},
                 "notes": {"type": "string"},
             },
-            "required": ["habit", "frequency", "quantity", "notes"],
+            "required": ["habit", "frequency", "quantity", "estimated_time", "notes"],
             "additionalProperties": False
         }
 
@@ -173,7 +184,7 @@ class HabitEngine:
         and any user notes.
         :return: insight on a habit, providing what the user did great and what they can improve on.
         """
-        habit, quantity = habit_info["habit"], habit_info["quantity"]
+        habit, estimated_time, quantity = habit_info["habit"], habit_info["estimated_time"], habit_info["quantity"]
         streak = habit_info["streak"]
         time_available = habit_info["time_available"]
         time_spent = habit_info["time_spent"]
@@ -193,8 +204,8 @@ class HabitEngine:
             "additionalProperties": False
         }
 
-        prompt = _habit_insight_prompt(habit, quantity, streak, time_available, time_spent, quantity_done, completed,
-                                       user_notes)
+        prompt = _habit_insight_prompt(habit, estimated_time, quantity, streak, time_available, time_spent,
+                                       quantity_done, completed, user_notes)
 
         response = self._generate_structured_response(prompt, resp_schema, 0.6)
         response_validated = validate_schema(response, HABIT_INS_REQUIRED_KEYS)
@@ -243,10 +254,11 @@ if __name__ == "__main__":
     habit_activity = {
         "habit": habit["habit"],
         "quantity": habit["quantity"],
+        "estimated_time": habit["estimated_time"],
         "streak": 3,
         "time_available": "1 hour",
         "time_spent": "45 minutes",
-        "quantity_done": "8 minutes of speaking practice",
+        "quantity_done": "",
         "completed": True,
         "user_notes": "Felt nervous but improved after the first few minutes."
     }
